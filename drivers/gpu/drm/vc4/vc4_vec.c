@@ -91,6 +91,10 @@
  * PAL   (4433618.75 Hz)       - 0x2A098ACB
  * PAL-M (3575611.[888111] Hz) - 0x21E6EFE3
  * PAL-N (3582056.25 Hz)       - 0x21F69446
+ *
+ * NOTE: For SECAM, it is used as the Dr center frequency,
+ * regardless of whether VEC_CONFIG1_CUSTOM_FREQ is enabled or not;
+ * that is specified as 4406250 Hz, which corresponds to 0x29C71C72.
  */
 #define VEC_FREQ3_2			0x180
 #define VEC_FREQ1_0			0x184
@@ -134,6 +138,13 @@
 
 #define VEC_INTERRUPT_CONTROL		0x190
 #define VEC_INTERRUPT_STATUS		0x194
+
+/*
+ * Db center frequency for SECAM; the clock for this is the same as for
+ * VEC_FREQ3_2/VEC_FREQ1_0, which is used for Db center frequency.
+ *
+ * This is specified as 4250000 Hz, which corresponds to 0x284BDA13.
+ */
 #define VEC_FCW_SECAM_B			0x198
 #define VEC_SECAM_GAIN_VAL		0x19c
 
@@ -321,6 +332,9 @@ static void vc4_vec_secam_mode_set(struct vc4_vec *vec)
 {
 	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_SECAM_STD);
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
+	/* reset Dr frequency in case NTSC-443 was in use */
+	VEC_WRITE(VEC_FREQ3_2, 0x29c7);
+	VEC_WRITE(VEC_FREQ1_0, 0x1c72);
 }
 
 static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
