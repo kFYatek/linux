@@ -289,6 +289,11 @@ static const struct drm_display_mode drm_mode_576i = {
 		 DRM_MODE_FLAG_INTERLACE)
 };
 
+static const struct drm_display_mode *const drm_modes[] = {
+	&drm_mode_480i,
+	&drm_mode_576i,
+};
+
 static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_NTSC] = {
 		.mode = &drm_mode_480i,
@@ -384,17 +389,18 @@ static void vc4_vec_connector_destroy(struct drm_connector *connector)
 
 static int vc4_vec_connector_get_modes(struct drm_connector *connector)
 {
-	struct drm_connector_state *state = connector->state;
 	struct drm_display_mode *mode;
+	size_t i;
 
-	mode = drm_mode_duplicate(connector->dev,
-				  vc4_vec_tv_modes[state->tv.mode].mode);
-	if (!mode) {
-		DRM_ERROR("Failed to create a new display mode\n");
-		return -ENOMEM;
+	for (i = 0; i < ARRAY_SIZE(drm_modes); ++i) {
+		mode = drm_mode_duplicate(connector->dev, drm_modes[i]);
+		if (!mode) {
+			DRM_ERROR("Failed to create a new display mode\n");
+			return -ENOMEM;
+		}
+
+		drm_mode_probed_add(connector, mode);
 	}
-
-	drm_mode_probed_add(connector, mode);
 
 	return 1;
 }
