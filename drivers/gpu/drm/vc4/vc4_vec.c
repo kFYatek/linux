@@ -68,6 +68,7 @@
 #define VEC_CONFIG0_STD_MASK		GENMASK(1, 0)
 #define VEC_CONFIG0_NTSC_STD		0
 #define VEC_CONFIG0_PAL_BDGHI_STD	1
+#define VEC_CONFIG0_PAL_M_STD		2
 #define VEC_CONFIG0_PAL_N_STD		3
 
 #define VEC_SCHPH			0x108
@@ -208,6 +209,7 @@ enum vc4_vec_tv_mode_id {
 	VC4_VEC_TV_MODE_NTSC_J,
 	VC4_VEC_TV_MODE_PAL,
 	VC4_VEC_TV_MODE_PAL_M,
+	VC4_VEC_TV_MODE_PAL_N,
 };
 
 struct vc4_vec_tv_mode {
@@ -242,6 +244,20 @@ static const struct debugfs_reg32 vec_regs[] = {
 	VC4_REG32(VEC_DAC_MISC),
 };
 
+static const struct drm_display_mode drm_mode_480i = {
+	DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 13500,
+		 720, 720 + 14, 720 + 14 + 64, 720 + 14 + 64 + 60, 0,
+		 480, 480 + 7, 480 + 7 + 6, 525, 0,
+		 DRM_MODE_FLAG_INTERLACE)
+};
+
+static const struct drm_display_mode drm_mode_576i = {
+	DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 13500,
+		 720, 720 + 20, 720 + 20 + 64, 720 + 20 + 64 + 60, 0,
+		 576, 576 + 4, 576 + 4 + 6, 625, 0,
+		 DRM_MODE_FLAG_INTERLACE)
+};
+
 static void vc4_vec_ntsc_mode_set(struct vc4_vec *vec)
 {
 	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_NTSC_STD | VEC_CONFIG0_PDEN);
@@ -254,13 +270,6 @@ static void vc4_vec_ntsc_j_mode_set(struct vc4_vec *vec)
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
 }
 
-static const struct drm_display_mode ntsc_mode = {
-	DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 13500,
-		 720, 720 + 14, 720 + 14 + 64, 720 + 14 + 64 + 60, 0,
-		 480, 480 + 7, 480 + 7 + 6, 525, 0,
-		 DRM_MODE_FLAG_INTERLACE)
-};
-
 static void vc4_vec_pal_mode_set(struct vc4_vec *vec)
 {
 	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_BDGHI_STD);
@@ -269,36 +278,36 @@ static void vc4_vec_pal_mode_set(struct vc4_vec *vec)
 
 static void vc4_vec_pal_m_mode_set(struct vc4_vec *vec)
 {
-	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_BDGHI_STD);
-	VEC_WRITE(VEC_CONFIG1,
-		  VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ);
-	VEC_WRITE(VEC_FREQ3_2, 0x223b);
-	VEC_WRITE(VEC_FREQ1_0, 0x61d1);
+	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_M_STD);
+	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
 }
 
-static const struct drm_display_mode pal_mode = {
-	DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 13500,
-		 720, 720 + 20, 720 + 20 + 64, 720 + 20 + 64 + 60, 0,
-		 576, 576 + 4, 576 + 4 + 6, 625, 0,
-		 DRM_MODE_FLAG_INTERLACE)
-};
+static void vc4_vec_pal_n_mode_set(struct vc4_vec *vec)
+{
+	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_N_STD);
+	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
+}
 
 static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_NTSC] = {
-		.mode = &ntsc_mode,
+		.mode = &drm_mode_480i,
 		.mode_set = vc4_vec_ntsc_mode_set,
 	},
 	[VC4_VEC_TV_MODE_NTSC_J] = {
-		.mode = &ntsc_mode,
+		.mode = &drm_mode_480i,
 		.mode_set = vc4_vec_ntsc_j_mode_set,
 	},
 	[VC4_VEC_TV_MODE_PAL] = {
-		.mode = &pal_mode,
+		.mode = &drm_mode_576i,
 		.mode_set = vc4_vec_pal_mode_set,
 	},
 	[VC4_VEC_TV_MODE_PAL_M] = {
-		.mode = &pal_mode,
+		.mode = &drm_mode_480i,
 		.mode_set = vc4_vec_pal_m_mode_set,
+	},
+	[VC4_VEC_TV_MODE_PAL_N] = {
+		.mode = &drm_mode_576i,
+		.mode_set = vc4_vec_pal_n_mode_set,
 	},
 };
 
@@ -517,6 +526,7 @@ static const char * const tv_mode_names[] = {
 	[VC4_VEC_TV_MODE_NTSC_J] = "NTSC-J",
 	[VC4_VEC_TV_MODE_PAL] = "PAL",
 	[VC4_VEC_TV_MODE_PAL_M] = "PAL-M",
+	[VC4_VEC_TV_MODE_PAL_N] = "PAL-N",
 };
 
 static int vc4_vec_bind(struct device *dev, struct device *master, void *data)
