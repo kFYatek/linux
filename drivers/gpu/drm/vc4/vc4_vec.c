@@ -194,6 +194,25 @@ enum vc4_vec_tv_mode_id {
 	VC4_VEC_TV_MODE_SECAM,
 };
 
+static const struct drm_display_mode drm_mode_480i = {
+	DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 13500,
+		 720, 720 + 14, 720 + 14 + 64, 720 + 14 + 64 + 60, 0,
+		 480, 480 + 7, 480 + 7 + 6, 525, 0,
+		 DRM_MODE_FLAG_INTERLACE)
+};
+
+static const struct drm_display_mode drm_mode_576i = {
+	DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 13500,
+		 720, 720 + 13, 720 + 13 + 64, 720 + 13 + 64 + 67, 0,
+		 576, 576 + 4, 576 + 4 + 6, 625, 0,
+		 DRM_MODE_FLAG_INTERLACE)
+};
+
+static const struct drm_display_mode *const drm_modes[] = {
+	&drm_mode_480i,
+	&drm_mode_576i,
+};
+
 /* General VEC hardware state. */
 struct vc4_vec {
 	struct platform_device *pdev;
@@ -204,6 +223,8 @@ struct vc4_vec {
 	void __iomem *regs;
 
 	struct clk *clock;
+
+	unsigned int last_modes[ARRAY_SIZE(drm_modes)];
 
 	struct debugfs_regset32 regset;
 };
@@ -273,25 +294,6 @@ static const struct debugfs_reg32 vec_regs[] = {
 	VC4_REG32(VEC_DAC_TEST),
 	VC4_REG32(VEC_DAC_CONFIG),
 	VC4_REG32(VEC_DAC_MISC),
-};
-
-static const struct drm_display_mode drm_mode_480i = {
-	DRM_MODE("720x480", DRM_MODE_TYPE_DRIVER, 13500,
-		 720, 720 + 14, 720 + 14 + 64, 720 + 14 + 64 + 60, 0,
-		 480, 480 + 7, 480 + 7 + 6, 525, 0,
-		 DRM_MODE_FLAG_INTERLACE)
-};
-
-static const struct drm_display_mode drm_mode_576i = {
-	DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 13500,
-		 720, 720 + 13, 720 + 13 + 64, 720 + 13 + 64 + 67, 0,
-		 576, 576 + 4, 576 + 4 + 6, 625, 0,
-		 DRM_MODE_FLAG_INTERLACE)
-};
-
-static const struct drm_display_mode *const drm_modes[] = {
-	&drm_mode_480i,
-	&drm_mode_576i,
 };
 
 static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
@@ -451,6 +453,8 @@ static struct drm_connector *vc4_vec_connector_init(struct drm_device *dev,
 	drm_object_attach_property(&connector->base,
 				   dev->mode_config.tv_mode_property,
 				   vc4_vec_get_current_mode(vec));
+	vec->last_modes[0] = VC4_VEC_TV_MODE_NTSC;
+	vec->last_modes[1] = VC4_VEC_TV_MODE_PAL;
 
 	drm_connector_attach_encoder(connector, vec->encoder);
 
@@ -570,27 +574,50 @@ static bool vc4_vec_encoder_mode_fixup(struct drm_encoder *encoder,
 	return true;
 }
 
+static void vc4_vec_encoder_atomic_mode_set(struct drm_encoder *encoder,
+					struct drm_crtc_state *crtc_state,
+					struct drm_connector_state *conn_state)
+{
+	struct vc4_vec_encoder *vc4_vec_encoder = to_vc4_vec_encoder(encoder);
+	struct vc4_vec *vec = vc4_vec_encoder->vec;
+
+	if (!drm_mode_equal(vc4_vec_tv_modes[conn_state->tv.mode].mode,
+			    &crtc_state->adjusted_mode)) {
+		/* resolution changed, fix up TV mode */
+		size_t i;
+
+		for (i = 0; i < ARRAY_SIZE(drm_modes); ++i)
+			if (drm_mode_equal(drm_modes[i],
+					   &crtc_state->adjusted_mode)) {
+				conn_state->tv.mode = vec->last_modes[i];
+				break;
+			}
+	} else {
+		size_t i;
+
+		for (i = 0; i < ARRAY_SIZE(drm_modes); ++i)
+			if (drm_mode_equal(drm_modes[i],
+					   &crtc_state->adjusted_mode)) {
+				vec->last_modes[i] = conn_state->tv.mode;
+				break;
+			}
+	}
+}
+
 static int vc4_vec_encoder_atomic_check(struct drm_encoder *encoder,
 					struct drm_crtc_state *crtc_state,
 					struct drm_connector_state *conn_state)
 {
-	const struct vc4_vec_tv_mode *vec_mode;
+	size_t i;
 
-	vec_mode = &vc4_vec_tv_modes[conn_state->tv.mode];
+	if (!conn_state->crtc)
+		return 0;
 
-	if (conn_state->crtc) {
-		u16 htotal = crtc_state->adjusted_mode.htotal;
-		u32 vtotal = crtc_state->adjusted_mode.vtotal;
-		if (!(crtc_state->adjusted_mode.flags &
-		      DRM_MODE_FLAG_INTERLACE))
-			vtotal *= 2;
+	for (i = 0; i < ARRAY_SIZE(drm_modes); ++i)
+		if (drm_mode_equal(drm_modes[i], &crtc_state->adjusted_mode))
+			return 0;
 
-		if (htotal != vec_mode->mode->htotal ||
-		    vtotal > vec_mode->mode->vtotal)
-			return -EINVAL;
-	}
-
-	return 0;
+	return -EINVAL;
 }
 
 static const struct drm_encoder_helper_funcs vc4_vec_encoder_helper_funcs = {
@@ -598,6 +625,7 @@ static const struct drm_encoder_helper_funcs vc4_vec_encoder_helper_funcs = {
 	.enable = vc4_vec_encoder_enable,
 	.mode_fixup = vc4_vec_encoder_mode_fixup,
 	.atomic_check = vc4_vec_encoder_atomic_check,
+	.atomic_mode_set = vc4_vec_encoder_atomic_mode_set,
 };
 
 static const struct of_device_id vc4_vec_dt_match[] = {
