@@ -183,6 +183,17 @@
 #define VEC_DAC_MISC_DAC_RST_N		BIT(0)
 
 
+enum vc4_vec_tv_mode_id {
+	VC4_VEC_TV_MODE_NTSC,
+	VC4_VEC_TV_MODE_NTSC_J,
+	VC4_VEC_TV_MODE_NTSC_443,
+	VC4_VEC_TV_MODE_PAL,
+	VC4_VEC_TV_MODE_PAL_M,
+	VC4_VEC_TV_MODE_PAL_N,
+	VC4_VEC_TV_MODE_PAL60,
+	VC4_VEC_TV_MODE_SECAM,
+};
+
 /* General VEC hardware state. */
 struct vc4_vec {
 	struct platform_device *pdev;
@@ -193,8 +204,6 @@ struct vc4_vec {
 	void __iomem *regs;
 
 	struct clk *clock;
-
-	const struct vc4_vec_tv_mode *tv_mode;
 
 	struct debugfs_regset32 regset;
 };
@@ -231,17 +240,6 @@ to_vc4_vec_connector(struct drm_connector *connector)
 {
 	return container_of(connector, struct vc4_vec_connector, base);
 }
-
-enum vc4_vec_tv_mode_id {
-	VC4_VEC_TV_MODE_NTSC,
-	VC4_VEC_TV_MODE_NTSC_J,
-	VC4_VEC_TV_MODE_NTSC_443,
-	VC4_VEC_TV_MODE_PAL,
-	VC4_VEC_TV_MODE_PAL_M,
-	VC4_VEC_TV_MODE_PAL_N,
-	VC4_VEC_TV_MODE_PAL60,
-	VC4_VEC_TV_MODE_SECAM,
-};
 
 struct vc4_vec_tv_mode {
 	const struct drm_display_mode *mode;
@@ -406,9 +404,8 @@ static void vc4_vec_connector_reset(struct drm_connector *connector)
 	drm_atomic_helper_connector_reset(connector);
 	/* preserve TV standard */
 	if (connector->state)
-		connector->state->tv.mode =
-			to_vc4_vec_connector(connector)->vec->tv_mode -
-			vc4_vec_tv_modes;
+		connector->state->tv.mode = vc4_vec_get_current_mode(
+			to_vc4_vec_connector(connector)->vec);
 }
 
 static const struct drm_connector_funcs vc4_vec_connector_funcs = {
@@ -445,12 +442,9 @@ static struct drm_connector *vc4_vec_connector_init(struct drm_device *dev,
 			   DRM_MODE_CONNECTOR_Composite);
 	drm_connector_helper_add(connector, &vc4_vec_connector_helper_funcs);
 
-	enum vc4_vec_tv_mode_id tv_mode = vc4_vec_get_current_mode(vec);
-
 	drm_object_attach_property(&connector->base,
 				   dev->mode_config.tv_mode_property,
-				   tv_mode);
-	vec->tv_mode = &vc4_vec_tv_modes[tv_mode];
+				   vc4_vec_get_current_mode(vec));
 
 	drm_connector_attach_encoder(connector, vec->encoder);
 
@@ -483,6 +477,7 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 {
 	struct vc4_vec_encoder *vc4_vec_encoder = to_vc4_vec_encoder(encoder);
 	struct vc4_vec *vec = vc4_vec_encoder->vec;
+	unsigned int tv_mode = vec->connector->state->tv.mode;
 	int ret;
 
 	ret = pm_runtime_get_sync(&vec->pdev->dev);
@@ -541,12 +536,14 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	/* Mask all interrupts. */
 	VEC_WRITE(VEC_MASK0, 0);
 
-	VEC_WRITE(VEC_CONFIG0, vec->tv_mode->config0);
-	VEC_WRITE(VEC_CONFIG1, vec->tv_mode->config1);
-	if (vec->tv_mode->custom_freq != 0) {
+	VEC_WRITE(VEC_CONFIG0, vc4_vec_tv_modes[tv_mode].config0);
+	VEC_WRITE(VEC_CONFIG1, vc4_vec_tv_modes[tv_mode].config1);
+	if (vc4_vec_tv_modes[tv_mode].custom_freq != 0) {
 		VEC_WRITE(VEC_FREQ3_2,
-			  (vec->tv_mode->custom_freq >> 16) & 0xffff);
-		VEC_WRITE(VEC_FREQ1_0, vec->tv_mode->custom_freq & 0xffff);
+			  (vc4_vec_tv_modes[tv_mode].custom_freq >> 16) &
+			  0xffff);
+		VEC_WRITE(VEC_FREQ1_0,
+			  vc4_vec_tv_modes[tv_mode].custom_freq & 0xffff);
 	}
 
 	VEC_WRITE(VEC_DAC_MISC,
@@ -560,16 +557,6 @@ static bool vc4_vec_encoder_mode_fixup(struct drm_encoder *encoder,
 				       struct drm_display_mode *adjusted_mode)
 {
 	return true;
-}
-
-static void vc4_vec_encoder_atomic_mode_set(struct drm_encoder *encoder,
-					struct drm_crtc_state *crtc_state,
-					struct drm_connector_state *conn_state)
-{
-	struct vc4_vec_encoder *vc4_vec_encoder = to_vc4_vec_encoder(encoder);
-	struct vc4_vec *vec = vc4_vec_encoder->vec;
-
-	vec->tv_mode = &vc4_vec_tv_modes[conn_state->tv.mode];
 }
 
 static int vc4_vec_encoder_atomic_check(struct drm_encoder *encoder,
@@ -592,7 +579,6 @@ static const struct drm_encoder_helper_funcs vc4_vec_encoder_helper_funcs = {
 	.enable = vc4_vec_encoder_enable,
 	.mode_fixup = vc4_vec_encoder_mode_fixup,
 	.atomic_check = vc4_vec_encoder_atomic_check,
-	.atomic_mode_set = vc4_vec_encoder_atomic_mode_set,
 };
 
 static const struct of_device_id vc4_vec_dt_match[] = {
