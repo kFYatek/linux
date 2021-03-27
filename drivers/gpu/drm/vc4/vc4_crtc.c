@@ -351,6 +351,8 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 
 	if (interlace) {
 		u32 field_delay = mode->htotal * pixel_rep / 2;
+		if (vec_interlaced)
+			++field_delay;
 
 		CRTC_WRITE(PV_VERTA_EVEN,
 			   VC4_SET_FIELD(mode->crtc_vtotal + vtotal_fixup -
