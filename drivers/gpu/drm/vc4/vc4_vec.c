@@ -45,6 +45,7 @@
 #define VEC_CONFIG0_YDEL(x)		((x) << 26)
 #define VEC_CONFIG0_CDEL_MASK		GENMASK(25, 24)
 #define VEC_CONFIG0_CDEL(x)		((x) << 24)
+#define VEC_CONFIG0_SECAM_STD		BIT(21)
 #define VEC_CONFIG0_PBPR_FIL		BIT(18)
 #define VEC_CONFIG0_CHROMA_GAIN_MASK	GENMASK(17, 16)
 #define VEC_CONFIG0_CHROMA_GAIN_UNITY	(0 << 16)
@@ -210,6 +211,7 @@ enum vc4_vec_tv_mode_id {
 	VC4_VEC_TV_MODE_PAL,
 	VC4_VEC_TV_MODE_PAL_M,
 	VC4_VEC_TV_MODE_PAL_N,
+	VC4_VEC_TV_MODE_SECAM,
 };
 
 struct vc4_vec_tv_mode {
@@ -288,6 +290,12 @@ static void vc4_vec_pal_n_mode_set(struct vc4_vec *vec)
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
 }
 
+static void vc4_vec_secam_mode_set(struct vc4_vec *vec)
+{
+	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_SECAM_STD);
+	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
+}
+
 static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_NTSC] = {
 		.mode = &drm_mode_480i,
@@ -308,6 +316,10 @@ static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_PAL_N] = {
 		.mode = &drm_mode_576i,
 		.mode_set = vc4_vec_pal_n_mode_set,
+	},
+	[VC4_VEC_TV_MODE_SECAM] = {
+		.mode = &drm_mode_576i,
+		.mode_set = vc4_vec_secam_mode_set,
 	},
 };
 
@@ -527,6 +539,7 @@ static const char * const tv_mode_names[] = {
 	[VC4_VEC_TV_MODE_PAL] = "PAL",
 	[VC4_VEC_TV_MODE_PAL_M] = "PAL-M",
 	[VC4_VEC_TV_MODE_PAL_N] = "PAL-N",
+	[VC4_VEC_TV_MODE_SECAM] = "SECAM",
 };
 
 static int vc4_vec_bind(struct device *dev, struct device *master, void *data)
