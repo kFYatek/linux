@@ -76,6 +76,22 @@
 #define VEC_SOFT_RESET			0x10c
 #define VEC_CLMP0_START			0x144
 #define VEC_CLMP0_END			0x148
+
+/*
+ * These set the color subcarrier frequency
+ * if VEC_CONFIG1_CUSTOM_FREQ is enabled.
+ *
+ * VEC_FREQ1_0 contains the most significant 16-bit half-word,
+ * VEC_FREQ3_2 contains the least significant 16-bit half-word.
+ * 0x80000000 seems to be equivalent to the pixel clock.
+ *
+ * Reference values:
+ *
+ * NTSC  (3579545.[45] Hz)     - 0x21F07C1F
+ * PAL   (4433618.75 Hz)       - 0x2A098ACB
+ * PAL-M (3575611.[888111] Hz) - 0x21E6EFE3
+ * PAL-N (3582056.25 Hz)       - 0x21F69446
+ */
 #define VEC_FREQ3_2			0x180
 #define VEC_FREQ1_0			0x184
 
@@ -208,6 +224,7 @@ to_vc4_vec_connector(struct drm_connector *connector)
 enum vc4_vec_tv_mode_id {
 	VC4_VEC_TV_MODE_NTSC,
 	VC4_VEC_TV_MODE_NTSC_J,
+	VC4_VEC_TV_MODE_NTSC_443,
 	VC4_VEC_TV_MODE_PAL,
 	VC4_VEC_TV_MODE_PAL_M,
 	VC4_VEC_TV_MODE_PAL_N,
@@ -272,6 +289,16 @@ static void vc4_vec_ntsc_j_mode_set(struct vc4_vec *vec)
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
 }
 
+static void vc4_vec_ntsc_443_mode_set(struct vc4_vec *vec)
+{
+	/* NTSC with PAL chroma frequency */
+	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_NTSC_STD | VEC_CONFIG0_PDEN);
+	VEC_WRITE(VEC_CONFIG1,
+		  VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ);
+	VEC_WRITE(VEC_FREQ3_2, 0x2a09);
+	VEC_WRITE(VEC_FREQ1_0, 0x8acb);
+}
+
 static void vc4_vec_pal_mode_set(struct vc4_vec *vec)
 {
 	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_BDGHI_STD);
@@ -304,6 +331,10 @@ static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_NTSC_J] = {
 		.mode = &drm_mode_480i,
 		.mode_set = vc4_vec_ntsc_j_mode_set,
+	},
+	[VC4_VEC_TV_MODE_NTSC_443] = {
+		.mode = &drm_mode_480i,
+		.mode_set = vc4_vec_ntsc_443_mode_set,
 	},
 	[VC4_VEC_TV_MODE_PAL] = {
 		.mode = &drm_mode_576i,
@@ -536,6 +567,7 @@ static const struct of_device_id vc4_vec_dt_match[] = {
 static const char * const tv_mode_names[] = {
 	[VC4_VEC_TV_MODE_NTSC] = "NTSC",
 	[VC4_VEC_TV_MODE_NTSC_J] = "NTSC-J",
+	[VC4_VEC_TV_MODE_NTSC_443] = "NTSC-443",
 	[VC4_VEC_TV_MODE_PAL] = "PAL",
 	[VC4_VEC_TV_MODE_PAL_M] = "PAL-M",
 	[VC4_VEC_TV_MODE_PAL_N] = "PAL-N",
