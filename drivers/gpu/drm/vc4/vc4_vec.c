@@ -66,7 +66,7 @@
 #define VEC_CONFIG0_YCDELAY		BIT(4)
 #define VEC_CONFIG0_RAMPEN		BIT(2)
 #define VEC_CONFIG0_YCDIS		BIT(2)
-#define VEC_CONFIG0_STD_MASK		GENMASK(1, 0)
+#define VEC_CONFIG0_STD_MASK		(VEC_CONFIG0_SECAM_STD | GENMASK(1, 0))
 #define VEC_CONFIG0_NTSC_STD		0
 #define VEC_CONFIG0_PAL_BDGHI_STD	1
 #define VEC_CONFIG0_PAL_M_STD		2
@@ -339,6 +339,39 @@ static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	},
 };
 
+enum vc4_vec_tv_mode_id vc4_vec_get_current_mode(struct vc4_vec *vec) {
+	/* detect currently configured TV mode,
+	 * so that sdtv_mode is respected during boot */
+	u32 config0 = VEC_READ(VEC_CONFIG0);
+	switch (config0 & VEC_CONFIG0_STD_MASK) {
+	case VEC_CONFIG0_NTSC_STD:
+		if (VEC_READ(VEC_CONFIG1) & VEC_CONFIG1_CUSTOM_FREQ)
+			/* this happens with sdtv_mode=3,
+			 * let's assume that the user wanted PAL-M */
+			return VC4_VEC_TV_MODE_PAL_M;
+		else if (config0 & VEC_CONFIG0_PDEN)
+			return VC4_VEC_TV_MODE_NTSC;
+		else
+			return VC4_VEC_TV_MODE_NTSC_J;
+
+	case VEC_CONFIG0_PAL_BDGHI_STD:
+		return VC4_VEC_TV_MODE_PAL;
+
+	case VEC_CONFIG0_PAL_M_STD:
+		return VC4_VEC_TV_MODE_PAL_M;
+
+	case VEC_CONFIG0_PAL_N_STD:
+		return VC4_VEC_TV_MODE_PAL_N;
+
+	case VEC_CONFIG0_SECAM_STD:
+		return VC4_VEC_TV_MODE_SECAM;
+
+	default:
+		/* if in doubt, default to NTSC */
+		return VC4_VEC_TV_MODE_NTSC;
+	}
+}
+
 static enum drm_connector_status
 vc4_vec_connector_detect(struct drm_connector *connector, bool force)
 {
@@ -368,11 +401,21 @@ static int vc4_vec_connector_get_modes(struct drm_connector *connector)
 	return 1;
 }
 
+static void vc4_vec_connector_reset(struct drm_connector *connector)
+{
+	drm_atomic_helper_connector_reset(connector);
+	/* preserve TV standard */
+	if (connector->state)
+		connector->state->tv.mode =
+			to_vc4_vec_connector(connector)->vec->tv_mode -
+			vc4_vec_tv_modes;
+}
+
 static const struct drm_connector_funcs vc4_vec_connector_funcs = {
 	.detect = vc4_vec_connector_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = vc4_vec_connector_destroy,
-	.reset = drm_atomic_helper_connector_reset,
+	.reset = vc4_vec_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
@@ -402,10 +445,12 @@ static struct drm_connector *vc4_vec_connector_init(struct drm_device *dev,
 			   DRM_MODE_CONNECTOR_Composite);
 	drm_connector_helper_add(connector, &vc4_vec_connector_helper_funcs);
 
+	enum vc4_vec_tv_mode_id tv_mode = vc4_vec_get_current_mode(vec);
+
 	drm_object_attach_property(&connector->base,
 				   dev->mode_config.tv_mode_property,
-				   VC4_VEC_TV_MODE_NTSC);
-	vec->tv_mode = &vc4_vec_tv_modes[VC4_VEC_TV_MODE_NTSC];
+				   tv_mode);
+	vec->tv_mode = &vc4_vec_tv_modes[tv_mode];
 
 	drm_connector_attach_encoder(connector, vec->encoder);
 
