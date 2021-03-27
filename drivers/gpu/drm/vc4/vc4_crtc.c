@@ -312,8 +312,10 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 		       vc4_encoder->type == VC4_ENCODER_TYPE_DSI1);
 	u32 format = is_dsi ? PV_CONTROL_FORMAT_DSIV_24 : PV_CONTROL_FORMAT_24;
 	u8 ppc = pv_data->pixels_per_clock;
-	u8 vtotal_fixup = (vc4_encoder->type == VC4_ENCODER_TYPE_VEC &&
-			   interlace) ? 1 : 0;
+	bool vec_interlaced = (vc4_encoder->type == VC4_ENCODER_TYPE_VEC &&
+			       interlace);
+	bool ntsc = (vec_interlaced && mode->htotal == 858);
+	u8 vtotal_fixup = (vec_interlaced && !ntsc) ? 1 : 0;
 	bool debug_dump_regs = false;
 
 	if (debug_dump_regs) {
@@ -348,31 +350,36 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 		   VC4_SET_FIELD(mode->crtc_vdisplay, PV_VERTB_VACTIVE));
 
 	if (interlace) {
+		u32 field_delay = mode->htotal * pixel_rep / 2;
+
 		CRTC_WRITE(PV_VERTA_EVEN,
 			   VC4_SET_FIELD(mode->crtc_vtotal + vtotal_fixup -
-					 mode->crtc_vsync_end - 1,
+					 mode->crtc_vsync_end -
+					 (ntsc ? 0 : 1),
 					 PV_VERTA_VBP) |
 			   VC4_SET_FIELD(mode->crtc_vsync_end -
 					 mode->crtc_vsync_start,
 					 PV_VERTA_VSYNC));
 		CRTC_WRITE(PV_VERTB_EVEN,
 			   VC4_SET_FIELD(mode->crtc_vsync_start -
-					 mode->crtc_vdisplay,
+					 mode->crtc_vdisplay +
+					 (ntsc ? 1 : 0),
 					 PV_VERTB_VFP) |
-			   VC4_SET_FIELD(mode->crtc_vdisplay, PV_VERTB_VACTIVE));
+			   VC4_SET_FIELD(mode->crtc_vdisplay,
+					 PV_VERTB_VACTIVE));
 
-		/* We set up first field even mode for HDMI.  VEC's
-		 * NTSC mode would want first field odd instead, once
-		 * we support it (to do so, set ODD_FIRST and put the
-		 * delay in VSYNCD_EVEN instead).
+		/* We set up first field even mode for HDMI and VEC's PAL.
+		 * For NTSC, we need first field odd.
 		 */
 		CRTC_WRITE(PV_V_CONTROL,
 			   PV_VCONTROL_CONTINUOUS |
 			   (is_dsi ? PV_VCONTROL_DSI : 0) |
 			   PV_VCONTROL_INTERLACE |
-			   VC4_SET_FIELD(mode->htotal * pixel_rep / 2,
-					 PV_VCONTROL_ODD_DELAY));
-		CRTC_WRITE(PV_VSYNCD_EVEN, 0);
+			   (ntsc ? PV_VCONTROL_ODD_FIRST
+				 : VC4_SET_FIELD(field_delay,
+						 PV_VCONTROL_ODD_DELAY)));
+		CRTC_WRITE(PV_VSYNCD_EVEN,
+			   (ntsc ? field_delay : 0));
 	} else {
 		CRTC_WRITE(PV_V_CONTROL,
 			   PV_VCONTROL_CONTINUOUS |
