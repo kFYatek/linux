@@ -284,7 +284,7 @@ static const struct drm_display_mode drm_mode_480i = {
 
 static const struct drm_display_mode drm_mode_576i = {
 	DRM_MODE("720x576", DRM_MODE_TYPE_DRIVER, 13500,
-		 720, 720 + 20, 720 + 20 + 64, 720 + 20 + 64 + 60, 0,
+		 720, 720 + 13, 720 + 13 + 64, 720 + 13 + 64 + 67, 0,
 		 576, 576 + 4, 576 + 4 + 6, 625, 0,
 		 DRM_MODE_FLAG_INTERLACE)
 };
