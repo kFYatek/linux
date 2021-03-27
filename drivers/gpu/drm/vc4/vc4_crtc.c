@@ -312,6 +312,8 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 		       vc4_encoder->type == VC4_ENCODER_TYPE_DSI1);
 	u32 format = is_dsi ? PV_CONTROL_FORMAT_DSIV_24 : PV_CONTROL_FORMAT_24;
 	u8 ppc = pv_data->pixels_per_clock;
+	u8 vtotal_fixup = (vc4_encoder->type == VC4_ENCODER_TYPE_VEC &&
+			   interlace) ? 1 : 0;
 	bool debug_dump_regs = false;
 
 	if (debug_dump_regs) {
@@ -336,7 +338,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 				 PV_HORZB_HACTIVE));
 
 	CRTC_WRITE(PV_VERTA,
-		   VC4_SET_FIELD(mode->crtc_vtotal - mode->crtc_vsync_end,
+		   VC4_SET_FIELD(mode->crtc_vtotal + vtotal_fixup - mode->crtc_vsync_end,
 				 PV_VERTA_VBP) |
 		   VC4_SET_FIELD(mode->crtc_vsync_end - mode->crtc_vsync_start,
 				 PV_VERTA_VSYNC));
@@ -347,7 +349,7 @@ static void vc4_crtc_config_pv(struct drm_crtc *crtc)
 
 	if (interlace) {
 		CRTC_WRITE(PV_VERTA_EVEN,
-			   VC4_SET_FIELD(mode->crtc_vtotal -
+			   VC4_SET_FIELD(mode->crtc_vtotal + vtotal_fixup -
 					 mode->crtc_vsync_end - 1,
 					 PV_VERTA_VBP) |
 			   VC4_SET_FIELD(mode->crtc_vsync_end -
