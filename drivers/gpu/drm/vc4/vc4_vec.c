@@ -477,6 +477,8 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 {
 	struct vc4_vec_encoder *vc4_vec_encoder = to_vc4_vec_encoder(encoder);
 	struct vc4_vec *vec = vc4_vec_encoder->vec;
+	struct drm_display_mode *adjusted_mode =
+		&encoder->crtc->state->adjusted_mode;
 	unsigned int tv_mode = vec->connector->state->tv.mode;
 	int ret;
 
@@ -493,7 +495,7 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	 * The good news is, these 2 encoders cannot be enabled at the same
 	 * time, thus preventing incompatible rate requests.
 	 */
-	ret = clk_set_rate(vec->clock, 108000000);
+	ret = clk_set_rate(vec->clock, 8000 * adjusted_mode->clock);
 	if (ret) {
 		DRM_ERROR("Failed to set clock rate: %d\n", ret);
 		return;
@@ -528,8 +530,8 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	VEC_WRITE(VEC_CONFIG2,
 		  VEC_CONFIG2_UV_DIG_DIS |
 		  VEC_CONFIG2_RGB_DIG_DIS |
-		  ((encoder->crtc->state->adjusted_mode.flags &
-		    DRM_MODE_FLAG_INTERLACE) ? 0 : VEC_CONFIG2_PROG_SCAN));
+		  ((adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE)
+			? 0 : VEC_CONFIG2_PROG_SCAN));
 	VEC_WRITE(VEC_CONFIG3, VEC_CONFIG3_HORIZ_LEN_STD);
 	VEC_WRITE(VEC_DAC_CONFIG,
 		  VEC_DAC_CONFIG_DAC_CTRL(0xc) |
