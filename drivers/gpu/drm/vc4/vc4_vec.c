@@ -526,7 +526,10 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	VEC_WRITE(VEC_CLMP0_START, 0xac);
 	VEC_WRITE(VEC_CLMP0_END, 0xec);
 	VEC_WRITE(VEC_CONFIG2,
-		  VEC_CONFIG2_UV_DIG_DIS | VEC_CONFIG2_RGB_DIG_DIS);
+		  VEC_CONFIG2_UV_DIG_DIS |
+		  VEC_CONFIG2_RGB_DIG_DIS |
+		  ((encoder->crtc->state->adjusted_mode.flags &
+		    DRM_MODE_FLAG_INTERLACE) ? 0 : VEC_CONFIG2_PROG_SCAN));
 	VEC_WRITE(VEC_CONFIG3, VEC_CONFIG3_HORIZ_LEN_STD);
 	VEC_WRITE(VEC_DAC_CONFIG,
 		  VEC_DAC_CONFIG_DAC_CTRL(0xc) |
@@ -567,9 +570,17 @@ static int vc4_vec_encoder_atomic_check(struct drm_encoder *encoder,
 
 	vec_mode = &vc4_vec_tv_modes[conn_state->tv.mode];
 
-	if (conn_state->crtc &&
-	    !drm_mode_equal(vec_mode->mode, &crtc_state->adjusted_mode))
-		return -EINVAL;
+	if (conn_state->crtc) {
+		u16 htotal = crtc_state->adjusted_mode.htotal;
+		u32 vtotal = crtc_state->adjusted_mode.vtotal;
+		if (!(crtc_state->adjusted_mode.flags &
+		      DRM_MODE_FLAG_INTERLACE))
+			vtotal *= 2;
+
+		if (htotal != vec_mode->mode->htotal ||
+		    vtotal > vec_mode->mode->vtotal)
+			return -EINVAL;
+	}
 
 	return 0;
 }
