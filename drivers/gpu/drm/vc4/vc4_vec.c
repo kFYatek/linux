@@ -239,6 +239,7 @@ enum vc4_vec_tv_mode_id {
 	VC4_VEC_TV_MODE_PAL,
 	VC4_VEC_TV_MODE_PAL_M,
 	VC4_VEC_TV_MODE_PAL_N,
+	VC4_VEC_TV_MODE_PAL60,
 	VC4_VEC_TV_MODE_SECAM,
 };
 
@@ -328,11 +329,21 @@ static void vc4_vec_pal_n_mode_set(struct vc4_vec *vec)
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
 }
 
+static void vc4_vec_pal60_mode_set(struct vc4_vec *vec)
+{
+	/* PAL-M with chroma frequency of regular PAL */
+	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_PAL_M_STD);
+	VEC_WRITE(VEC_CONFIG1,
+		  VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ);
+	VEC_WRITE(VEC_FREQ3_2, 0x2a09);
+	VEC_WRITE(VEC_FREQ1_0, 0x8acb);
+}
+
 static void vc4_vec_secam_mode_set(struct vc4_vec *vec)
 {
 	VEC_WRITE(VEC_CONFIG0, VEC_CONFIG0_SECAM_STD);
 	VEC_WRITE(VEC_CONFIG1, VEC_CONFIG1_C_CVBS_CVBS);
-	/* reset Dr frequency in case NTSC-443 was in use */
+	/* reset Dr frequency in case NTSC-443 or PAL60 was in use */
 	VEC_WRITE(VEC_FREQ3_2, 0x29c7);
 	VEC_WRITE(VEC_FREQ1_0, 0x1c72);
 }
@@ -361,6 +372,10 @@ static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 	[VC4_VEC_TV_MODE_PAL_N] = {
 		.mode = &drm_mode_576i,
 		.mode_set = vc4_vec_pal_n_mode_set,
+	},
+	[VC4_VEC_TV_MODE_PAL60] = {
+		.mode = &drm_mode_480i,
+		.mode_set = vc4_vec_pal60_mode_set,
 	},
 	[VC4_VEC_TV_MODE_SECAM] = {
 		.mode = &drm_mode_576i,
@@ -585,6 +600,7 @@ static const char * const tv_mode_names[] = {
 	[VC4_VEC_TV_MODE_PAL] = "PAL",
 	[VC4_VEC_TV_MODE_PAL_M] = "PAL-M",
 	[VC4_VEC_TV_MODE_PAL_N] = "PAL-N",
+	[VC4_VEC_TV_MODE_PAL60] = "PAL60",
 	[VC4_VEC_TV_MODE_SECAM] = "SECAM",
 };
 
