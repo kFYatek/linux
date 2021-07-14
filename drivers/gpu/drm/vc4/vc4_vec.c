@@ -254,8 +254,7 @@ struct vc4_vec_tv_mode {
 	const struct drm_display_mode *interlaced_mode;
 	const struct drm_display_mode *progressive_mode;
 	u32 config0;
-	u32 config1;
-	u32 custom_freq;
+	u64 chroma_freq_millihz;
 };
 
 static const struct debugfs_reg32 vec_regs[] = {
@@ -316,54 +315,51 @@ static const struct vc4_vec_tv_mode vc4_vec_tv_modes[] = {
 		.interlaced_mode = &drm_mode_480i,
 		.progressive_mode = &drm_mode_240p,
 		.config0 = VEC_CONFIG0_NTSC_STD | VEC_CONFIG0_PDEN,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
+		.chroma_freq_millihz = 3579545455ull,
 	},
 	[VC4_VEC_TV_MODE_NTSC_J] = {
 		.interlaced_mode = &drm_mode_480i,
 		.progressive_mode = &drm_mode_240p,
 		.config0 = VEC_CONFIG0_NTSC_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
+		.chroma_freq_millihz = 3579545455ull,
 	},
 	[VC4_VEC_TV_MODE_NTSC_443] = {
 		/* NTSC with PAL chroma frequency */
 		.interlaced_mode = &drm_mode_480i,
 		.progressive_mode = &drm_mode_240p,
 		.config0 = VEC_CONFIG0_NTSC_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ,
-		.custom_freq = 0x2a098acb,
+		.chroma_freq_millihz = 4433618750ull,
 	},
 	[VC4_VEC_TV_MODE_PAL] = {
 		.interlaced_mode = &drm_mode_576i,
 		.progressive_mode = &drm_mode_288p,
 		.config0 = VEC_CONFIG0_PAL_BDGHI_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
+		.chroma_freq_millihz = 4433618750ull,
 	},
 	[VC4_VEC_TV_MODE_PAL_M] = {
 		.interlaced_mode = &drm_mode_480i,
 		.progressive_mode = &drm_mode_240p,
 		.config0 = VEC_CONFIG0_PAL_M_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
+		.chroma_freq_millihz = 3575611888ull,
 	},
 	[VC4_VEC_TV_MODE_PAL_N] = {
 		.interlaced_mode = &drm_mode_576i,
 		.progressive_mode = &drm_mode_288p,
 		.config0 = VEC_CONFIG0_PAL_N_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
+		.chroma_freq_millihz = 3582056250ull,
 	},
 	[VC4_VEC_TV_MODE_PAL60] = {
 		/* PAL-M with chroma frequency of regular PAL */
 		.interlaced_mode = &drm_mode_480i,
 		.progressive_mode = &drm_mode_240p,
 		.config0 = VEC_CONFIG0_PAL_M_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ,
-		.custom_freq = 0x2a098acb,
+		.chroma_freq_millihz = 4433618750ull,
 	},
 	[VC4_VEC_TV_MODE_SECAM] = {
 		.interlaced_mode = &drm_mode_576i,
 		.progressive_mode = &drm_mode_288p,
 		.config0 = VEC_CONFIG0_SECAM_STD,
-		.config1 = VEC_CONFIG1_C_CVBS_CVBS,
-		.custom_freq = 0x29c71c72,
+		.chroma_freq_millihz = 4406250000ull,
 	},
 };
 
@@ -617,8 +613,12 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 {
 	struct vc4_vec_encoder *vc4_vec_encoder = to_vc4_vec_encoder(encoder);
 	struct vc4_vec *vec = vc4_vec_encoder->vec;
+	struct drm_display_mode *adjusted_mode =
+		&encoder->crtc->state->adjusted_mode;
 	unsigned int tv_mode = vec->connector->state->tv.mode;
 	int ret;
+	long eff_clk_rate;
+	u64 chroma_freq;
 
 	ret = pm_runtime_get_sync(&vec->pdev->dev);
 	if (ret < 0) {
@@ -633,7 +633,7 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	 * The good news is, these 2 encoders cannot be enabled at the same
 	 * time, thus preventing incompatible rate requests.
 	 */
-	ret = clk_set_rate(vec->clock, 108000000);
+	ret = clk_set_rate(vec->clock, 8000 * adjusted_mode->clock);
 	if (ret) {
 		DRM_ERROR("Failed to set clock rate: %d\n", ret);
 		return;
@@ -644,6 +644,9 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 		DRM_ERROR("Failed to turn on core clock: %d\n", ret);
 		return;
 	}
+
+	eff_clk_rate = clk_get_rate(vec->clock);
+	DRM_DEBUG_DRIVER("Effective clock rate: %ld\n", eff_clk_rate);
 
 	/* Reset the different blocks */
 	VEC_WRITE(VEC_WSE_RESET, 1);
@@ -668,8 +671,8 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	VEC_WRITE(VEC_CONFIG2,
 		  VEC_CONFIG2_UV_DIG_DIS |
 		  VEC_CONFIG2_RGB_DIG_DIS |
-		  ((encoder->crtc->state->adjusted_mode.flags &
-		    DRM_MODE_FLAG_INTERLACE) ? 0 : VEC_CONFIG2_PROG_SCAN));
+		  ((adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE)
+			? 0 : VEC_CONFIG2_PROG_SCAN));
 	VEC_WRITE(VEC_CONFIG3, VEC_CONFIG3_HORIZ_LEN_STD);
 	VEC_WRITE(VEC_DAC_CONFIG, vec->variant->dac_config);
 
@@ -677,14 +680,20 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	VEC_WRITE(VEC_MASK0, 0);
 
 	VEC_WRITE(VEC_CONFIG0, vc4_vec_tv_modes[tv_mode].config0);
-	VEC_WRITE(VEC_CONFIG1, vc4_vec_tv_modes[tv_mode].config1);
-	if (vc4_vec_tv_modes[tv_mode].custom_freq != 0) {
-		VEC_WRITE(VEC_FREQ3_2,
-			  (vc4_vec_tv_modes[tv_mode].custom_freq >> 16) &
-			  0xffff);
-		VEC_WRITE(VEC_FREQ1_0,
-			  vc4_vec_tv_modes[tv_mode].custom_freq & 0xffff);
-	}
+	VEC_WRITE(VEC_CONFIG1,
+		  VEC_CONFIG1_C_CVBS_CVBS | VEC_CONFIG1_CUSTOM_FREQ);
+
+	chroma_freq = vc4_vec_tv_modes[tv_mode].chroma_freq_millihz << 31;
+	chroma_freq += (125ull * (u64)eff_clk_rate) >> 1; /* proper rounding */
+	do_div(chroma_freq, eff_clk_rate);
+	do_div(chroma_freq, 125);
+	VEC_WRITE(VEC_FREQ3_2, (chroma_freq >> 16) & 0xffff);
+	VEC_WRITE(VEC_FREQ1_0, chroma_freq & 0xffff);
+
+	/* SECAM Db frequency */
+	chroma_freq = ((4250000000ull / 125) << 31) + eff_clk_rate / 2;
+	do_div(chroma_freq, eff_clk_rate);
+	VEC_WRITE(VEC_FCW_SECAM_B, chroma_freq);
 
 	VEC_WRITE(VEC_DAC_MISC,
 		  VEC_DAC_MISC_VID_ACT | VEC_DAC_MISC_DAC_RST_N);
