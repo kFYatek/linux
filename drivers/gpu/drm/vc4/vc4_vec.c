@@ -429,15 +429,79 @@ static int vc4_vec_connector_atomic_check(struct drm_connector *conn,
 	struct drm_connector_state *new_state =
 		drm_atomic_get_new_connector_state(state, conn);
 
-	const struct vc4_vec_tv_mode *vec_mode =
-		&vc4_vec_tv_modes[new_state->tv.mode];
-
 	if (new_state->crtc) {
 		struct drm_crtc_state *crtc_state =
 			drm_atomic_get_new_crtc_state(state, new_state->crtc);
 
-		if (!drm_mode_equal(vec_mode->mode, &crtc_state->mode))
+		if (crtc_state->mode.htotal !=
+			    vc4_vec_tv_modes[new_state->tv.mode].mode->htotal ||
+		    crtc_state->mode.hdisplay % 4 != 0 ||
+		    crtc_state->mode.hsync_end -
+			    crtc_state->mode.hsync_start < 1)
 			return -EINVAL;
+
+		switch (crtc_state->mode.htotal) {
+		case 858:
+			/* 525-line mode */
+			if (crtc_state->mode.crtc_vdisplay < 1 ||
+			    crtc_state->mode.crtc_vdisplay > 253 ||
+			    crtc_state->mode.crtc_vsync_start -
+				    crtc_state->mode.crtc_vdisplay < 1 ||
+			    crtc_state->mode.crtc_vsync_end -
+				    crtc_state->mode.crtc_vsync_start != 3 ||
+			    crtc_state->mode.crtc_vtotal -
+				    crtc_state->mode.crtc_vsync_end < 4 ||
+			    crtc_state->mode.crtc_vtotal > 262)
+				return -EINVAL;
+
+			if ((crtc_state->mode.flags &
+			     DRM_MODE_FLAG_INTERLACE) &&
+			    (crtc_state->mode.vdisplay % 2 != 0 ||
+			     crtc_state->mode.vsync_start % 2 != 1 ||
+			     crtc_state->mode.vsync_end % 2 != 1 ||
+			     crtc_state->mode.vtotal % 2 != 1))
+				return -EINVAL;
+
+			/* progressive mode is hard-wired to 262 total lines */
+			if (!(crtc_state->mode.flags &
+			      DRM_MODE_FLAG_INTERLACE) &&
+			    crtc_state->mode.vtotal != 262)
+				return -EINVAL;
+
+			break;
+
+		case 864:
+			/* 625-line mode */
+			if (crtc_state->mode.crtc_vdisplay < 1 ||
+			    crtc_state->mode.crtc_vdisplay > 305 ||
+			    crtc_state->mode.crtc_vsync_start -
+				    crtc_state->mode.crtc_vdisplay < 1 ||
+			    crtc_state->mode.crtc_vsync_end -
+				    crtc_state->mode.crtc_vsync_start != 3 ||
+			    crtc_state->mode.crtc_vtotal -
+				    crtc_state->mode.crtc_vsync_end < 2 ||
+			    crtc_state->mode.crtc_vtotal > 312)
+				return -EINVAL;
+
+			if ((crtc_state->mode.flags &
+			     DRM_MODE_FLAG_INTERLACE) &&
+			    (crtc_state->mode.vdisplay % 2 != 0 ||
+			     crtc_state->mode.vsync_start % 2 != 0 ||
+			     crtc_state->mode.vsync_end % 2 != 0 ||
+			     crtc_state->mode.vtotal % 2 != 1))
+				return -EINVAL;
+
+			/* progressive mode is hard-wired to 312 total lines */
+			if (!(crtc_state->mode.flags &
+			      DRM_MODE_FLAG_INTERLACE) &&
+			    crtc_state->mode.vtotal != 312)
+				return -EINVAL;
+
+			break;
+
+		default:
+			return -EINVAL;
+		}
 
 		if (old_state->tv.mode != new_state->tv.mode)
 			crtc_state->mode_changed = true;
@@ -565,7 +629,10 @@ static void vc4_vec_encoder_enable(struct drm_encoder *encoder)
 	VEC_WRITE(VEC_CLMP0_START, 0xac);
 	VEC_WRITE(VEC_CLMP0_END, 0xec);
 	VEC_WRITE(VEC_CONFIG2,
-		  VEC_CONFIG2_UV_DIG_DIS | VEC_CONFIG2_RGB_DIG_DIS);
+		  VEC_CONFIG2_UV_DIG_DIS |
+		  VEC_CONFIG2_RGB_DIG_DIS |
+		  ((encoder->crtc->state->adjusted_mode.flags &
+		    DRM_MODE_FLAG_INTERLACE) ? 0 : VEC_CONFIG2_PROG_SCAN));
 	VEC_WRITE(VEC_CONFIG3, VEC_CONFIG3_HORIZ_LEN_STD);
 	VEC_WRITE(VEC_DAC_CONFIG, vec->variant->dac_config);
 
